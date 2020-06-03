@@ -1,3 +1,3 @@
 @echo off
 set LOGURU_LEVEL=INFO
-cmd /k %cd%\.python\python %cd%\main.py "%~1"
+cmd /k %~dp0\.python\python %~dp0\main.py "%~1"

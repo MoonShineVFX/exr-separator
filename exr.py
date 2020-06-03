@@ -145,7 +145,12 @@ class EXRSequence:
         os.system('title Start separate')
         with ProcessPoolExecutor() as executor:
             results = executor.map(self.save_channel, process_args)
-            for i, _ in enumerate(results):
+            for i, result in enumerate(results):
+                stat, message = result
+                if stat is True:
+                    logger.info(message)
+                else:
+                    logger.error(message)
                 os.system(f'title Separate progress: {i + 1}/{total_count}')
         os.system('title Finish')
 
@@ -158,13 +163,13 @@ class EXRSequence:
         filename_chars = [char for char in file.stem]
         frame_number = []
 
-        while True:
+        while len(filename_chars) != 0:
             if filename_chars[-1].isdecimal():
                 frame_number.insert(0, filename_chars.pop())
                 continue
             break
 
-        while True:
+        while len(filename_chars) != 0:
             if not filename_chars[-1].isalpha():
                 frame_number.insert(0, filename_chars.pop())
                 continue
@@ -184,16 +189,15 @@ class EXRSequence:
                 del header[to_remove_key]
 
     @staticmethod
-    def save_channel(arg):
+    def save_channel(arg) -> (bool, str):
         exr_sequence: EXRSequence = arg[0]
         exr_file: Path = arg[1]
         channel_name: str = arg[2]
 
         if channel_name not in exr_sequence._channels_info.keys():
-            logger.error(f'No channel name "{channel_name}" found ({exr_sequence._channels_info})')
-            return
+            return False, f'No channel name "{channel_name}" found ({exr_sequence._channels_info})'
 
-        logger.info(f'Separate [{channel_name}]: {exr_file}')
+        logger.debug(f'Process [{channel_name}]: {exr_file}')
 
         logger.debug(f'Source: {exr_file}')
         source_exr = OpenEXR.InputFile(str(exr_file))
@@ -222,5 +226,6 @@ class EXRSequence:
         target_exr.close()
         source_exr.close()
 
-        logger.info(f'File saved: {str(target_exr_file)}')
-        logger.complete()
+        logger.debug(f'File saved: {str(target_exr_file)}')
+
+        return True, f'Separated: {exr_file.stem} [{channel_name}]'
