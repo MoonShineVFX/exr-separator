@@ -142,7 +142,7 @@ class EXRSequence:
 
         # process
         total_count = len(process_args)
-        os.system('title Start separate')
+        self.set_window_title('title Start separate')
         with ProcessPoolExecutor() as executor:
             results = executor.map(self.save_channel, process_args)
             for i, result in enumerate(results):
@@ -151,12 +151,16 @@ class EXRSequence:
                     logger.info(message)
                 else:
                     logger.error(message)
-                os.system(f'title Separate progress: {i + 1}/{total_count}')
-        os.system('title Finish')
+                self.set_window_title(f'title Separate progress: {i + 1}/{total_count}')
+        self.set_window_title('title Finish')
 
         # finish report
         end_time = perf_counter()
         logger.info(f'Finish separation ({end_time - start_time:.02f}s)')
+
+    @staticmethod
+    def set_window_title(title_text: str):
+        os.system(f'title {title_text}')
 
     @staticmethod
     def append_channel_name_to_filename(file: Path, channel_name: str):
