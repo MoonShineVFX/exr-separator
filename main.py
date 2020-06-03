@@ -1,7 +1,7 @@
 import sys
-from loguru import logger
 from exr import EXRSequence
 from pathlib import Path
+from loguru import logger
 
 
 if __name__ == '__main__':

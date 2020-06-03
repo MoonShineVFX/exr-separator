@@ -4,6 +4,7 @@ from pathlib import Path
 from loguru import logger
 from concurrent.futures import ProcessPoolExecutor
 from time import perf_counter
+import os
 
 
 class EXRChannelInfo:
@@ -140,8 +141,13 @@ class EXRSequence:
                 process_args.append((self, exr_file, channel_name))
 
         # process
+        total_count = len(process_args)
+        os.system('title Start separate')
         with ProcessPoolExecutor() as executor:
-            executor.map(self.save_channel, process_args)
+            results = executor.map(self.save_channel, process_args)
+            for i, _ in enumerate(results):
+                os.system(f'title Separate progress: {i + 1}/{total_count}')
+        os.system('title Finish')
 
         # finish report
         end_time = perf_counter()
@@ -217,3 +223,4 @@ class EXRSequence:
         source_exr.close()
 
         logger.info(f'File saved: {str(target_exr_file)}')
+        logger.complete()
