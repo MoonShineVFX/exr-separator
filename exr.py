@@ -2,6 +2,8 @@ import OpenEXR
 import Imath
 from pathlib import Path
 from loguru import logger
+from concurrent.futures import ProcessPoolExecutor
+from time import perf_counter
 
 
 class EXRChannelInfo:
@@ -69,14 +71,14 @@ class EXRSequence:
     color_channel_labels = ('R', 'G', 'B', 'A')
     depth_channel_labels = ('Z', )
 
-    def __init__(self, folder_path: str):
+    def __init__(self, folder_path: Path):
         logger.info(f'Create from "{folder_path}"')
-        self._folder_path: Path = Path(folder_path)
-        self._exr_files: [Path] = self.get_files()
+        self._folder_path: Path = folder_path
+        self._exr_files: [Path] = self._get_files()
         self._header: dict = self._get_header()
         self._channels_info: {str: EXRChannelInfo} = self._get_channels_info()
 
-    def get_files(self) -> [Path]:
+    def _get_files(self) -> [Path]:
         exr_files = list(self._folder_path.glob('*.exr'))
         logger.info(f'{len(exr_files)} files found')
         return exr_files
@@ -127,6 +129,24 @@ class EXRSequence:
 
         return channels_info
 
+    def separate(self):
+        logger.info('Start separation')
+        start_time = perf_counter()
+
+        # add args
+        process_args = []
+        for exr_file in self._exr_files:
+            for channel_name in self._channels_info.keys():
+                process_args.append((self, exr_file, channel_name))
+
+        # process
+        with ProcessPoolExecutor() as executor:
+            executor.map(self.save_channel, process_args)
+
+        # finish report
+        end_time = perf_counter()
+        logger.info(f'Finish separation ({end_time - start_time:.02f}s)')
+
     @staticmethod
     def append_channel_name_to_filename(file: Path, channel_name: str):
         filename_chars = [char for char in file.stem]
@@ -146,28 +166,46 @@ class EXRSequence:
 
         return f'{"".join(filename_chars)}.{channel_name}{"".join(frame_number)}{file.suffix}'
 
-    def _save_channel(self,  exr_file: Path, channel_name: str):
-        if channel_name not in self._channels_info.keys():
-            logger.error(f'No channel name "{channel_name}" found ({self._channels_info})')
+    @staticmethod
+    def clean_header(header: dict):
+        to_remove_keys = [
+            'image:crop', 'image:window', 'renderMemory', 'renderTime', 'space:world',
+            'worldToCamera', 'worldToNDC',
+            'order'
+        ]
+        for to_remove_key in to_remove_keys:
+            if to_remove_key in header:
+                del header[to_remove_key]
+
+    @staticmethod
+    def save_channel(arg):
+        exr_sequence: EXRSequence = arg[0]
+        exr_file: Path = arg[1]
+        channel_name: str = arg[2]
+
+        if channel_name not in exr_sequence._channels_info.keys():
+            logger.error(f'No channel name "{channel_name}" found ({exr_sequence._channels_info})')
             return
+
+        logger.info(f'Separate [{channel_name}]: {exr_file}')
 
         logger.debug(f'Source: {exr_file}')
         source_exr = OpenEXR.InputFile(str(exr_file))
-        channel_info = self._channels_info[channel_name]
+        channel_info = exr_sequence._channels_info[channel_name]
 
         # make header
         header = source_exr.header()
-        del header['order']
+        exr_sequence.clean_header(header)
 
         header['channels'] = {}
         for c in channel_info.get_target_channels():
             header['channels'][c] = channel_info.get_type()
 
         # make folder
-        target_folder = self._folder_path.joinpath(channel_name)
+        target_folder = exr_sequence._folder_path.joinpath(channel_name)
         logger.debug(f'Make folder: {target_folder}')
         target_folder.mkdir(parents=True, exist_ok=True)
-        target_exr_file = target_folder.joinpath(self.append_channel_name_to_filename(exr_file, channel_name))
+        target_exr_file = target_folder.joinpath(exr_sequence.append_channel_name_to_filename(exr_file, channel_name))
 
         # make exr
         logger.debug(f'Write file: {target_exr_file}')
@@ -178,12 +216,4 @@ class EXRSequence:
         target_exr.close()
         source_exr.close()
 
-        logger.info(f'Save exr: {str(target_exr_file)}')
-
-    def seperate(self):
-        logger.info('Start seperation')
-        for exr_file in self._exr_files:
-            logger.info(f'Seperate exr: {exr_file}')
-            for channel_name in self._channels_info.keys():
-                logger.info(f'Seperate channel: {channel_name}')
-                self._save_channel(exr_file, channel_name)
+        logger.info(f'File saved: {str(target_exr_file)}')
